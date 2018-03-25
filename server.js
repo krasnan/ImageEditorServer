@@ -1,6 +1,7 @@
 var ENDPOINT = process.env.npm_package_config_endpoint || "http://wiki.example.com/api.php";
 var DYNAMIC_ENDPOINT = process.env.npm_package_config_dynamic_endpoint || "false";
 var PORT = process.env.PORT || 8080;
+var HOST = process.env.HOST || "0.0.0.0";
 
 
 // Setup basic express server
@@ -8,10 +9,10 @@ var request = require('request');
 var server = require('http').createServer();
 var io = require('socket.io')(server);
 
-server.listen(PORT);
-console.log('Running on: http://localhost:' + PORT);
+server.listen(PORT, HOST);
+console.log('Running on: ' + HOST + ':' + PORT);
 console.log('Running dynamic endpoints: ' + DYNAMIC_ENDPOINT);
-if(DYNAMIC_ENDPOINT === "false")
+if(DYNAMIC_ENDPOINT !== "false")
     console.log('Runing with Endpoint: ' + ENDPOINT);
 
 
