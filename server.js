@@ -330,7 +330,7 @@ function Room(file) {
             result = this.selectObject(id, user);
 
         if (result)
-            socket.broadcast.to(room.name).emit('selection-changed', {
+            socket.broadcast.to(this.name).emit('selection-changed', {
                 id: id,
                 selectable: selectable,
                 selectedBy: user.id
