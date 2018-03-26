@@ -1,90 +1,123 @@
-var ENDPOINT = process.env.npm_package_config_endpoint || "http://wiki.example.com/api.php";
-var DYNAMIC_ENDPOINT = process.env.npm_package_config_dynamic_endpoint || "false";
-var PORT = process.env.PORT || 8080;
-var HOST = process.env.HOST || "0.0.0.0";
+const API_ENDPOINT = process.env.npm_package_config_api_endpoint || "http://wiki.matfyz.sk/api.php";
+const API_TOKEN = process.env.npm_package_config_api_token || "";
+const PORT = process.env.PORT || 8080;
+const HOST = process.env.HOST || "0.0.0.0";
 
 
 // Setup basic express server
-var request = require('request');
-var server = require('http').createServer();
-var io = require('socket.io')(server);
+const request = require('request');
+const md5 = require('md5');
+const server = require('http').createServer();
+const io = require('socket.io')(server);
 
 server.listen(PORT, HOST);
-console.log('Running on: ' + HOST + ':' + PORT);
-console.log('Running dynamic endpoints: ' + DYNAMIC_ENDPOINT);
-if(DYNAMIC_ENDPOINT !== "false")
-    console.log('Runing with Endpoint: ' + ENDPOINT);
+console.log('> Listening on: ' + HOST + ':' + PORT);
+console.log('> Runing with API_ENDPOINT: ' + API_ENDPOINT);
 
 
-var rm = new RoomManager();
+let rm = new RoomManager();
 
 io.on('connection', function (socket) {
-    query = socket.handshake.query;
-    var room;
+    let query = socket.handshake.query;
+    let user = new User(query['name'], socket);
+    user.setToken(query['secret']);
+
+    if (user.verified) { //TODO: authenticate user... Check the wiki edit token with api.
+
+        let room = rm.createRoom(query['file']);
+
+        socket.join(room.name);
+
+        // socket.emit('connection-created', {room: room, user: user});
+        room.createUser(user, socket);
+
+        socket.on('message-created', function (message) {
+            room.createMessage(message.text, user.id, '*');
+        });
+
+        socket.on('canvas-modified', function (properties) {
+            room.modifyCanvas(properties, socket);
+        });
+
+        socket.on('selection-changed', function (data) {
+            room.setSelectable(data.id, data.selectable, user, socket);
+        });
+
+        socket.on('object-modified', function (object) {
+            room.modifyObject(object, socket);
+        });
+
+        socket.on('object-created', function (object) {
+            room.createObject(object, socket);
+        });
+
+        socket.on('object-removed', function (id) {
+            room.removeObject(id, socket);
+        });
+
+        socket.on('disconnect', function () {
+            room.deselectObjectsBy(user);
+
+            socket.broadcast.to(room.name).emit('user-removed', user);
+            socket.leave(room.name);
+            room.removeUser(socket.id);
+        });
+    }
+    else{
+        console.log(" ! Bad token")
+    }
 
 
-
-    if (DYNAMIC_ENDPOINT === "true")
-        room = rm.createRoom(query['file'], query['endpoint']);
-    else
-        room = rm.createRoom(query['file'], ENDPOINT);
-
-    var user = new User(query['name'], socket);
-
-    socket.join(room.name);
-
-    // socket.emit('connection-created', {room: room, user: user});
-    room.createUser(user, socket);
-
-    socket.on('message-created', function (message) {
-        room.createMessage(message.text, user.id, '*');
-    });
-
-    socket.on('canvas-modified', function (properties) {
-        room.modifyCanvas(properties, socket);
-    });
-
-    socket.on('selection-changed', function (data) {
-        room.setSelectable(data.id, data.selectable, user, socket);
-    });
-
-    socket.on('object-modified', function (object) {
-        room.modifyObject(object, socket);
-    });
-
-    socket.on('object-created', function (object) {
-        room.createObject(object, socket);
-    });
-
-    socket.on('object-removed', function (id) {
-        room.removeObject(id, socket);
-    });
-
-    socket.on('disconnect', function () {
-        room.deselectObjectsBy(user);
-
-        socket.broadcast.to(room.name).emit('user-removed', user);
-        socket.leave(room.name);
-        room.removeUser(socket.id);
-    });
 });
 
 
 function User(name, socket) {
+    let self = this;
+
     this.id = socket.id;
     this.name = name;
     this.color = getRandomColor();
+    this.verified = false;
 
     this.getSocket = function () {
         return io.sockets.connected[this.id];
     };
 
-    this.setEditToken = function (token) {
+    this.setToken = function (token) {
         _token = token;
+        this.verifyUser(_token);
     };
 
-    this.getEditToken = function () {
+    this.getToken = function () {
         return _token;
+    };
+
+    this.verifyUser = function (token) {
+        console.log(token + "  |  " + md5(API_TOKEN));
+        self.verified = token === md5(API_TOKEN);
+        return self.verified;
+        // request.post(
+        //     {
+        //         url: API_ENDPOINT,
+        //         form: {
+        //             action: 'checktoken',
+        //             format: 'json',
+        //             type: 'csrf',
+        //             maxtokenage: 999999,
+        //             token: encodeURI(token)
+        //         }
+        //     },
+        //     function (error, response, body) {
+        //         if (error) {
+        //             console.log("Unable to connect to: " + API_ENDPOINT);
+        //             console.log(error);
+        //             self.verified = false;
+        //         }
+        //         body = JSON.parse(body);
+        //         self.verified = (body.checktoken && body.checktoken.result !== "invalid");
+        //         console.log(self.verified);
+        //     }
+        // );
     }
 }
 
@@ -97,8 +130,8 @@ function Message(text, from, to, type) {
     this.time = dt.toLocaleTimeString();
 }
 
-function Room(file, endpoint) {
-    var self = this;
+function Room(file) {
+    let self = this;
     this.users = {};
     this.messages = [];
     this.objects = {};
@@ -106,22 +139,17 @@ function Room(file, endpoint) {
     this.format = "png";
     this.loaded = false;
     this.file = file;
-    this.endpoint = endpoint;
 
-    this.name = this.endpoint + "_" + this.file;
+    this.name = this.file;
 
     this.isEmpty = function () {
         return Object.keys(this.users).length <= 0;
     };
 
-    this.setEndpoint = function (endpoint) {
-        this.endpoint = endpoint;
-    };
-
     this.loadFromWiki = function () {
         request.post(
             {
-                url: this.endpoint,
+                url: API_ENDPOINT,
                 form: {
                     action: 'query',
                     format: 'json',
@@ -132,33 +160,35 @@ function Room(file, endpoint) {
             },
             function (error, response, body) {
                 if (error) {
-                    console.log("Unable to connect to: " + this.endpoint);
+                    console.log("Unable to connect to: " + API_ENDPOINT);
                     console.log(error);
                     return;
                 }
                 body = JSON.parse(body);
 
-                var pageId = Object.keys(body.query.pages)[0];
+                let pageId = Object.keys(body.query.pages)[0];
                 if (pageId >= 0) {
-                    var imageinfo = body.query.pages[pageId].imageinfo[0];
+                    let imageinfo = body.query.pages[pageId].imageinfo[0];
                     self.canvas.width = imageinfo.width;
                     self.canvas.height = imageinfo.height;
                     self.format = imageinfo.mime.split('/')[1];
 
-                    var jsonLoaded = false;
+                    let jsonLoaded = false;
 
-                    for (var i in imageinfo.metadata) {
-                        if (imageinfo.metadata[i].name === 'imageEditorContent') {
-                            var content = JSON.parse(imageinfo.metadata[i].value);
+                    for (let i in imageinfo.metadata) {
+                        if (imageinfo.metadata.hasOwnProperty(i)) {
+                            if (imageinfo.metadata[i].name === 'imageEditorContent') {
+                                let content = JSON.parse(imageinfo.metadata[i].value);
 
-                            content.objects.forEach(function (obj) {
-                                self.objects[obj.id] = obj;
-                            });
+                                content.objects.forEach(function (obj) {
+                                    self.objects[obj.id] = obj;
+                                });
 
-                            if (content.background !== undefined)
-                                self.canvas.backgroundColor = content.background;
+                                if (content.background !== undefined)
+                                    self.canvas.backgroundColor = content.background;
 
-                            jsonLoaded = true;
+                                jsonLoaded = true;
+                            }
                         }
                     }
                     if (!jsonLoaded) {
@@ -204,7 +234,7 @@ function Room(file, endpoint) {
     };
 
     this.createMessage = function (text, from, to, type) {
-        message = new Message(text, from, to, type);
+        let message = new Message(text, from, to, type);
         this.messages.push(message);
         io.in(this.name).emit('message-created', message);
         // socket.broadcast.to(this.name).emit('message-created', message);
@@ -214,12 +244,12 @@ function Room(file, endpoint) {
         this.canvas.height = properties.height;
         this.canvas.width = properties.width;
         this.canvas.backgroundColor = properties.backgroundColor;
-        socket.broadcast.to(room.name).emit('canvas-modified', this.canvas);
+        socket.broadcast.to(this.name).emit('canvas-modified', this.canvas);
     };
 
     this.createObject = function (obj, socket) {
         this.objects[obj.id] = obj;
-        socket.broadcast.to(room.name).emit('object-created', this.objects[obj.id]);
+        socket.broadcast.to(this.name).emit('object-created', this.objects[obj.id]);
     };
 
     this.loadObjectImageFromUrl = function (url) {
@@ -237,7 +267,7 @@ function Room(file, endpoint) {
 
     this.removeObject = function (id, socket) {
         delete this.objects[id];
-        socket.broadcast.to(room.name).emit('object-removed', id);
+        socket.broadcast.to(this.name).emit('object-removed', id);
     };
 
     this.modifyObject = function (obj, socket) {
@@ -261,8 +291,8 @@ function Room(file, endpoint) {
         return this.objects[id].selectedBy;
     };
     this.deselectObjectsBy = function (user) {
-        for (var id in this.objects) {
-            var unselected = this.deselectObject(id, user);
+        for (let id in this.objects) {
+            let unselected = this.deselectObject(id, user);
             console.log("> unlocking object id: " + id + " user: " + user.id + " unselected: " + unselected);
             if (unselected) {
                 io.in(this.name).emit('selection-changed', {id: id, selectable: this.isSelectable(id)});
@@ -293,7 +323,7 @@ function Room(file, endpoint) {
     this.setSelectable = function (id, selectable, user, socket) {
         // console.log('selection-changed: ', id, selectable, user);
         // console.log(this.objects);
-        var result = false;
+        let result = false;
         if (selectable)
             result = this.deselectObject(id, user);
         else
@@ -309,7 +339,7 @@ function Room(file, endpoint) {
             socket.emit('selection-deny', id);
     };
     this.deselectAll = function () {
-        for (var id in this.objects) {
+        for (let id in this.objects) {
             this.objects[id].selectable = true;
             this.objects[id].selectedBy = undefined;
         }
@@ -323,14 +353,14 @@ function RoomManager() {
         return Object.keys(this.rooms).length <= 0;
     };
 
-    this.getRoom = function (file, endpoint) {
-        return this.rooms[endpoint + "_" + file];
+    this.getRoom = function (file) {
+        return this.rooms[file];
     };
 
-    this.createRoom = function (file, endpoint) {
-        room = this.getRoom(file, endpoint);
+    this.createRoom = function (file) {
+        let room = this.getRoom(file);
         if (room === undefined) {
-            room = new Room(file, endpoint);
+            room = new Room(file);
             this.rooms[room.name] = room;
 
             console.log("+ room " + room.name + " added");
@@ -342,14 +372,14 @@ function RoomManager() {
     this.removeRoom = function (name) {
         delete this.rooms[name];
         console.log("- room " + name + " deleted");
-    }
+    };
 }
 
 
 function getRandomColor() {
-    var letters = '0123456789ABCDE'.split('');
-    var color = '#';
-    for (var i = 0; i < 6; i++) {
+    let letters = '0123456789ABCDE'.split('');
+    let color = '#';
+    for (let i = 0; i < 6; i++) {
         color += letters[Math.round(Math.random() * 14)];
     }
     return color;

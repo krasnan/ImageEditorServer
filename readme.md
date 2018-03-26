@@ -6,12 +6,13 @@
 ```
 npm install
 ```
-* configure environment variables in `/server/package.json`, where `endpoint` is your MediaWiki `api.php` address
-* if you want to set endpoint dynamicly from client side, set property `dynamic_endpoint` to `"true"`
+* configure environment variables in `/server/package.json`, 
+where `api_endpoint` is your MediaWiki `api.php` url 
+and `api_token` is private token 
 ```json
   "config": {
-    "endpoint": "http://wiki.localhost/api.php",
-    "dynamic_endpoint": "false"
+    "api_endpoint": "http://wiki.localhost/api.php",
+    "api_token": "SET API TOKEN"
   },
 ```
 * run node server application with command 

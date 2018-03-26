@@ -13,11 +13,12 @@
     "start": "node server.js"
   },
   "config": {
-    "endpoint": "http://wiki.localhost/api.php",
-    "dynamic_endpoint": "false"
+    "api_endpoint": "http://wiki.localhost/api.php",
+    "api_token": "SET API TOKEN"
   },
   "dependencies": {
     "express": "^4.15.2",
+    "md5": "^2.2.1",
     "request": "^2.83.0",
     "socket.io": "^2.0.4"
   },
