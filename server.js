@@ -256,6 +256,7 @@ function Room(file) {
         this.objects['loaded_image'] = {
             id: 'loaded_image',
             type: 'image',
+            name: this.file,
             src: url,
             left: 0,
             top: 0,
