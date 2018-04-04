@@ -178,16 +178,19 @@ function Room(file) {
                     for (let i in imageinfo.metadata) {
                         if (imageinfo.metadata.hasOwnProperty(i)) {
                             if (imageinfo.metadata[i].name === 'imageEditorContent') {
-                                let content = JSON.parse(imageinfo.metadata[i].value);
+                                try{
+                                    let content = JSON.parse(imageinfo.metadata[i].value);
+                                    content.objects.forEach(function (obj) {
+                                        self.objects[obj.id] = obj;
+                                    });
 
-                                content.objects.forEach(function (obj) {
-                                    self.objects[obj.id] = obj;
-                                });
+                                    if (content.background !== undefined)
+                                        self.canvas.backgroundColor = content.background;
 
-                                if (content.background !== undefined)
-                                    self.canvas.backgroundColor = content.background;
-
-                                jsonLoaded = true;
+                                    jsonLoaded = true;
+                                }
+                                catch (ex){
+                                }
                             }
                         }
                     }
