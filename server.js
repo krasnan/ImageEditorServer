@@ -178,6 +178,7 @@ function Room(file) {
                 self.loaded = true;
                 io.in(self.name).emit('init', {
                     room: self
+
                 });
             }
         );
@@ -194,8 +195,7 @@ function Room(file) {
 
         if (this.loaded) {
             socket.emit('init', {
-                room: this,
-                user: user,
+                room: this
             });
         }
     };
