@@ -26,13 +26,10 @@ io.on('connection', function (socket) {
 
         let room = rm.createRoom(query['file']);
 
-        socket.join(room.name);
-
-        // socket.emit('connection-created', {room: room, user: user});
         room.createUser(user, socket);
 
         socket.on('message-created', function (message) {
-            room.createMessage(message.text, user.id, '*');
+            room.createMessage(message.text, user, '*');
         });
 
         socket.on('canvas-modified', function (properties) {
@@ -59,8 +56,7 @@ io.on('connection', function (socket) {
             room.deselectObjectsBy(user);
 
             socket.broadcast.to(room.name).emit('user-removed', user);
-            socket.leave(room.name);
-            room.removeUser(socket.id);
+            room.removeUser(user, socket);
         });
     }
     else{
@@ -96,28 +92,6 @@ function User(name, socket) {
         console.log(token + "  |  " + md5(API_TOKEN));
         self.verified = token === md5(API_TOKEN);
         return self.verified;
-        // request.post(
-        //     {
-        //         url: API_ENDPOINT,
-        //         form: {
-        //             action: 'checktoken',
-        //             format: 'json',
-        //             type: 'csrf',
-        //             maxtokenage: 999999,
-        //             token: encodeURI(token)
-        //         }
-        //     },
-        //     function (error, response, body) {
-        //         if (error) {
-        //             console.log("Unable to connect to: " + API_ENDPOINT);
-        //             console.log(error);
-        //             self.verified = false;
-        //         }
-        //         body = JSON.parse(body);
-        //         self.verified = (body.checktoken && body.checktoken.result !== "invalid");
-        //         console.log(self.verified);
-        //     }
-        // );
     }
 }
 
@@ -209,6 +183,7 @@ function Room(file) {
     };
 
     this.createUser = function (user, socket) {
+        socket.join(this.name);
         this.users[user.id] = user;
         console.log("+ user " + user.name + "(" + user.id + ") added");
         this.createMessage('User ' + user.name + ' connected', 'SYSTEM', '*', 'system');
@@ -223,14 +198,15 @@ function Room(file) {
         }
     };
 
-    this.removeUser = function (id) {
-        if (this.users[id] === undefined) return;
+    this.removeUser = function (user, socket) {
+        if (this.users[user.id] === undefined) return;
+        socket.leave(this.name);
 
-        this.createMessage('User ' + this.users[id].name + ' disconnected', 'SYSTEM', '*', 'system');
-        io.in(this.name).emit('user-removed', id);
+        this.createMessage('User ' + user.name + ' disconnected', 'SYSTEM', '*', 'system');
+        io.in(this.name).emit('user-removed', user.id);
 
-        delete this.users[id];
-        console.log("- user " + id + " deleted");
+        delete this.users[user.id];
+        console.log("- user " + user.id + " deleted");
 
         if (this.isEmpty())
             rm.removeRoom(this.name);
@@ -325,8 +301,6 @@ function Room(file) {
         }
     };
     this.setSelectable = function (id, selectable, user, socket) {
-        // console.log('selection-changed: ', id, selectable, user);
-        // console.log(this.objects);
         let result = false;
         if (selectable)
             result = this.deselectObject(id, user);
