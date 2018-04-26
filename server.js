@@ -70,7 +70,8 @@ io.on('connection', function (socket) {
 function User(name, socket) {
     let self = this;
 
-    this.id = socket.id;
+    if(socket !== null)
+        this.id = socket.id;
     this.name = name;
     this.color = getRandomColor();
     this.verified = false;
@@ -186,7 +187,7 @@ function Room(file) {
         socket.join(this.name);
         this.users[user.id] = user;
         console.log("+ user " + user.name + "(" + user.id + ") added");
-        this.createMessage('User ' + user.name + ' connected', 'SYSTEM', '*', 'system');
+        this.createMessage('User ' + user.name + ' connected', new User('SYSTEM',null), '*', 'system');
         io.in(this.name).emit('user-created', this.users[user.id]);
 
         socket.emit('connected', user);
@@ -194,6 +195,7 @@ function Room(file) {
         if (this.loaded) {
             socket.emit('init', {
                 room: this,
+                user: user,
             });
         }
     };
@@ -202,7 +204,7 @@ function Room(file) {
         if (this.users[user.id] === undefined) return;
         socket.leave(this.name);
 
-        this.createMessage('User ' + user.name + ' disconnected', 'SYSTEM', '*', 'system');
+        this.createMessage('User ' + user.name + ' disconnected', new User('SYSTEM',null), '*', 'system');
         io.in(this.name).emit('user-removed', user.id);
 
         delete this.users[user.id];
